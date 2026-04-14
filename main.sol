@@ -108,3 +108,58 @@ contract H0piuM {
     error H0piuM__ZeroAddress();
     error H0piuM__Paused();
     error H0piuM__AlreadyPaused();
+    error H0piuM__AlreadyUnpaused();
+
+    event H0piuM_OwnerProposed(address indexed proposed);
+    event H0piuM_OwnerAccepted(address indexed previous, address indexed next);
+    event H0piuM_GuardianSet(address indexed previous, address indexed next);
+    event H0piuM_PauseChanged(bool paused, address indexed by);
+
+    address private _owner;
+    address private _pendingOwner;
+    address public guardian;
+    bool public paused;
+
+    // ---------- EIP-712 authorized withdrawals ----------
+    // Users can sign a withdrawal so a relayer (or anyone) can submit it.
+    // This does not grant new powers; it only changes who can submit the tx.
+    bytes32 internal constant _EIP712_DOMAIN_TYPEHASH =
+        keccak256("EIP712Domain(string name,string version,uint256 chainId,address verifyingContract)");
+    bytes32 internal constant _EIP712_NAME_HASH = keccak256(bytes("H0piuM-OrchidVault"));
+    bytes32 internal constant _EIP712_VERSION_HASH = keccak256(bytes("v1.2.0"));
+
+    bytes32 internal constant _AUTH_WITHDRAW_NATIVE_TYPEHASH =
+        keccak256("AuthWithdrawNative(address owner,address to,uint256 amount,uint256 nonce,uint256 deadline)");
+    bytes32 internal constant _AUTH_WITHDRAW_ERC20_TYPEHASH =
+        keccak256("AuthWithdrawERC20(address token,address owner,address to,uint256 amount,uint256 nonce,uint256 deadline)");
+
+    uint256 internal constant _SECP256K1_HALF_ORDER =
+        0x7FFFFFFFFFFFFFFFFFFFFFFFFFFFFFFF5D576E7357A4501DDFE92F46681B20A0;
+
+    error H0piuM__AuthExpired();
+    error H0piuM__AuthBadSig();
+    error H0piuM__AuthNonce();
+
+    event H0piuM_AuthorizedWithdrawNative(address indexed owner, address indexed to, uint256 amount, uint256 nonce);
+    event H0piuM_AuthorizedWithdrawERC20(
+        address indexed token,
+        address indexed owner,
+        address indexed to,
+        uint256 amount,
+        uint256 nonce
+    );
+
+    mapping(address => uint256) public authNonces;
+
+    modifier onlyOwner() {
+        if (msg.sender != _owner) revert H0piuM__NotOwner();
+        _;
+    }
+
+    modifier onlyGuardianOrOwner() {
+        if (msg.sender != guardian && msg.sender != _owner) revert H0piuM__NotGuardian();
+        _;
+    }
+
+    modifier whenNotPaused() {
+        if (paused) revert H0piuM__Paused();
