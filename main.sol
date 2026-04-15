@@ -548,3 +548,58 @@ contract H0piuM {
     }
 
     function domainSeparatorV4() external view returns (bytes32) {
+        return _domainSeparatorV4();
+    }
+
+    function previewAuthWithdrawNativeDigest(
+        address owner_,
+        address to,
+        uint256 amount,
+        uint256 nonce,
+        uint256 deadline
+    ) external view returns (bytes32) {
+        bytes32 sh = keccak256(abi.encode(_AUTH_WITHDRAW_NATIVE_TYPEHASH, owner_, to, amount, nonce, deadline));
+        return _hashTypedDataV4(sh);
+    }
+
+    function previewAuthWithdrawERC20Digest(
+        address token,
+        address owner_,
+        address to,
+        uint256 amount,
+        uint256 nonce,
+        uint256 deadline
+    ) external view returns (bytes32) {
+        bytes32 sh = keccak256(abi.encode(_AUTH_WITHDRAW_ERC20_TYPEHASH, token, owner_, to, amount, nonce, deadline));
+        return _hashTypedDataV4(sh);
+    }
+
+    // ---------- staged admin actions ----------
+    // Allowed targets: only THIS contract. This prevents “admin arbitrary call” disasters.
+    // Allowed selectors: pause, unpause, setGuardian, proposeOwner.
+
+    function stage(bytes4 selector, bytes calldata payload) external onlyOwner returns (bytes32 id) {
+        if (selector == bytes4(0)) revert H0piuM__BadSelector();
+        if (
+            selector != this.pause.selector &&
+            selector != this.unpause.selector &&
+            selector != this.setGuardian.selector &&
+            selector != this.proposeOwner.selector
+        ) {
+            revert H0piuM__BadSelector();
+        }
+        if (payload.length > 96) revert H0piuM__StagePayload();
+
+        bytes memory callData = bytes.concat(selector, payload);
+        bytes32 h = keccak256(callData);
+        id = keccak256(abi.encodePacked(address(this), selector, h, block.chainid));
+        if (stages[id].earliestExec != 0) revert H0piuM__StageAlready();
+
+        uint64 earliest = uint64(block.timestamp) + FUSE_DELAY;
+        uint64 expires = earliest + FUSE_WINDOW;
+        stages[id] = Stage({
+            target: address(this),
+            value: 0,
+            earliestExec: earliest,
+            expiresAt: expires,
+            payloadHash: h,
