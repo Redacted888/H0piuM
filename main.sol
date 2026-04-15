@@ -383,3 +383,58 @@ contract H0piuM {
         unchecked {
             nativeBalance[msg.sender] = bal - total;
         }
+        for (uint256 j = 0; j < recipients.length; ) {
+            address to2 = recipients[j];
+            uint256 a2 = amounts[j];
+            nativeBalance[to2] += a2;
+            emit H0piuM_InternalMoveNative(msg.sender, to2, a2);
+            unchecked {
+                ++j;
+            }
+        }
+    }
+
+    function depositERC20(address token, address to, uint256 amount) external whenNotPaused nonReentrant {
+        if (token == address(0) || to == address(0)) revert H0piuM__ZeroAddress();
+        if (amount == 0) revert H0piuM__AmountZero();
+        _touchToken(token);
+        token.safeTransferFrom(msg.sender, address(this), amount);
+        erc20Balance[token][to] += amount;
+        totalErc20Accounted[token] += amount;
+        emit H0piuM_DepositERC20(token, msg.sender, to, amount);
+    }
+
+    function depositERC20WithPermit(
+        address token,
+        address to,
+        uint256 amount,
+        uint256 deadline,
+        uint8 v,
+        bytes32 r,
+        bytes32 s
+    ) external whenNotPaused nonReentrant {
+        if (token == address(0) || to == address(0)) revert H0piuM__ZeroAddress();
+        if (amount == 0) revert H0piuM__AmountZero();
+        _touchToken(token);
+        IERC20PermitLike(token).permit(msg.sender, address(this), amount, deadline, v, r, s);
+        token.safeTransferFrom(msg.sender, address(this), amount);
+        erc20Balance[token][to] += amount;
+        totalErc20Accounted[token] += amount;
+        emit H0piuM_DepositERC20(token, msg.sender, to, amount);
+    }
+
+    function withdrawERC20(address token, address to, uint256 amount) external whenNotPaused nonReentrant {
+        if (token == address(0) || to == address(0)) revert H0piuM__ZeroAddress();
+        if (amount == 0) revert H0piuM__AmountZero();
+        uint256 bal = erc20Balance[token][msg.sender];
+        if (bal < amount) revert H0piuM__Insufficient();
+        unchecked {
+            erc20Balance[token][msg.sender] = bal - amount;
+        }
+        token.safeTransfer(to, amount);
+        unchecked {
+            totalErc20Accounted[token] -= amount;
+        }
+        emit H0piuM_WithdrawERC20(token, msg.sender, to, amount);
+    }
+
