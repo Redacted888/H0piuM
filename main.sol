@@ -493,3 +493,58 @@ contract H0piuM {
         bytes32 r,
         bytes32 s
     ) external whenNotPaused nonReentrant returns (uint256 nonce) {
+        if (owner_ == address(0) || to == address(0)) revert H0piuM__ZeroAddress();
+        if (amount == 0) revert H0piuM__AmountZero();
+        if (block.timestamp > deadline) revert H0piuM__AuthExpired();
+
+        nonce = authNonces[owner_];
+        bytes32 structHash = keccak256(abi.encode(_AUTH_WITHDRAW_NATIVE_TYPEHASH, owner_, to, amount, nonce, deadline));
+        bytes32 digest = _hashTypedDataV4(structHash);
+        address signer = _recoverStrict(digest, v, r, s);
+        if (signer != owner_) revert H0piuM__AuthBadSig();
+
+        uint256 bal = nativeBalance[owner_];
+        if (bal < amount) revert H0piuM__Insufficient();
+        unchecked {
+            nativeBalance[owner_] = bal - amount;
+            totalNativeAccounted -= amount;
+            authNonces[owner_] = nonce + 1;
+        }
+        (bool ok, ) = to.call{value: amount}("");
+        if (!ok) revert H0piuM__BadCall();
+        emit H0piuM_AuthorizedWithdrawNative(owner_, to, amount, nonce);
+    }
+
+    function authorizedWithdrawERC20(
+        address token,
+        address owner_,
+        address to,
+        uint256 amount,
+        uint256 deadline,
+        uint8 v,
+        bytes32 r,
+        bytes32 s
+    ) external whenNotPaused nonReentrant returns (uint256 nonce) {
+        if (token == address(0) || owner_ == address(0) || to == address(0)) revert H0piuM__ZeroAddress();
+        if (amount == 0) revert H0piuM__AmountZero();
+        if (block.timestamp > deadline) revert H0piuM__AuthExpired();
+
+        nonce = authNonces[owner_];
+        bytes32 structHash =
+            keccak256(abi.encode(_AUTH_WITHDRAW_ERC20_TYPEHASH, token, owner_, to, amount, nonce, deadline));
+        bytes32 digest = _hashTypedDataV4(structHash);
+        address signer = _recoverStrict(digest, v, r, s);
+        if (signer != owner_) revert H0piuM__AuthBadSig();
+
+        uint256 bal = erc20Balance[token][owner_];
+        if (bal < amount) revert H0piuM__Insufficient();
+        unchecked {
+            erc20Balance[token][owner_] = bal - amount;
+            totalErc20Accounted[token] -= amount;
+            authNonces[owner_] = nonce + 1;
+        }
+        token.safeTransfer(to, amount);
+        emit H0piuM_AuthorizedWithdrawERC20(token, owner_, to, amount, nonce);
+    }
+
+    function domainSeparatorV4() external view returns (bytes32) {
