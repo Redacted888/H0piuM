@@ -328,3 +328,58 @@ contract H0piuM {
                 total += a;
                 ++i;
             }
+        }
+        if (total != msg.value) revert H0piuM__Dust();
+        totalNativeAccounted += msg.value;
+    }
+
+    function withdrawNative(address payable to, uint256 amount) external whenNotPaused nonReentrant {
+        if (to == address(0)) revert H0piuM__ZeroAddress();
+        if (amount == 0) revert H0piuM__AmountZero();
+        uint256 bal = nativeBalance[msg.sender];
+        if (bal < amount) revert H0piuM__Insufficient();
+        unchecked {
+            nativeBalance[msg.sender] = bal - amount;
+        }
+        (bool ok, ) = to.call{value: amount}("");
+        if (!ok) revert H0piuM__BadCall();
+        unchecked {
+            totalNativeAccounted -= amount;
+        }
+        emit H0piuM_WithdrawNative(msg.sender, to, amount);
+    }
+
+    function moveNative(address to, uint256 amount) external whenNotPaused nonReentrant {
+        if (to == address(0)) revert H0piuM__ZeroAddress();
+        if (amount == 0) revert H0piuM__AmountZero();
+        uint256 bal = nativeBalance[msg.sender];
+        if (bal < amount) revert H0piuM__Insufficient();
+        unchecked {
+            nativeBalance[msg.sender] = bal - amount;
+        }
+        nativeBalance[to] += amount;
+        emit H0piuM_InternalMoveNative(msg.sender, to, amount);
+    }
+
+    function batchMoveNative(address[] calldata recipients, uint256[] calldata amounts)
+        external
+        whenNotPaused
+        nonReentrant
+    {
+        if (recipients.length != amounts.length) revert H0piuM__BadToken();
+        uint256 total;
+        for (uint256 i = 0; i < recipients.length; ) {
+            address to = recipients[i];
+            uint256 a = amounts[i];
+            if (to == address(0)) revert H0piuM__ZeroAddress();
+            if (a == 0) revert H0piuM__AmountZero();
+            unchecked {
+                total += a;
+                ++i;
+            }
+        }
+        uint256 bal = nativeBalance[msg.sender];
+        if (bal < total) revert H0piuM__Insufficient();
+        unchecked {
+            nativeBalance[msg.sender] = bal - total;
+        }
