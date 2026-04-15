@@ -163,3 +163,58 @@ contract H0piuM {
 
     modifier whenNotPaused() {
         if (paused) revert H0piuM__Paused();
+        _;
+    }
+
+    // ---------- reentrancy ----------
+    error H0piuM__Reentrant();
+    uint256 private _re;
+
+    modifier nonReentrant() {
+        if (_re == 2) revert H0piuM__Reentrant();
+        _re = 2;
+        _;
+        _re = 1;
+    }
+
+    // ---------- vault ----------
+    error H0piuM__AmountZero();
+    error H0piuM__Insufficient();
+    error H0piuM__BadToken();
+    error H0piuM__NativeRejected();
+    error H0piuM__Dust();
+
+    event H0piuM_DepositERC20(address indexed token, address indexed from, address indexed to, uint256 amount);
+    event H0piuM_WithdrawERC20(address indexed token, address indexed from, address indexed to, uint256 amount);
+    event H0piuM_DepositNative(address indexed from, address indexed to, uint256 amount);
+    event H0piuM_WithdrawNative(address indexed from, address indexed to, uint256 amount);
+    event H0piuM_InternalMoveNative(address indexed from, address indexed to, uint256 amount);
+    event H0piuM_InternalMoveERC20(address indexed token, address indexed from, address indexed to, uint256 amount);
+
+    // token => user => balance
+    mapping(address => mapping(address => uint256)) public erc20Balance;
+    mapping(address => uint256) public nativeBalance;
+
+    // ---------- staged admin actions ----------
+    // The “fuse”: stage now, execute after delay. Cancel any time by owner.
+    error H0piuM__StageNotFound();
+    error H0piuM__StageNotReady();
+    error H0piuM__StageExpired();
+    error H0piuM__StageAlready();
+    error H0piuM__BadCall();
+    error H0piuM__BadStageTarget();
+    error H0piuM__BadSelector();
+    error H0piuM__ValueNotZero();
+    error H0piuM__StagePayload();
+
+    event H0piuM_Staged(bytes32 indexed id, address indexed target, uint256 earliestExec, uint256 expiresAt);
+    event H0piuM_StageCancelled(bytes32 indexed id);
+    event H0piuM_StageExecuted(bytes32 indexed id, address indexed target, bytes4 selector, bool ok);
+
+    struct Stage {
+        address target;
+        uint96 value;
+        uint64 earliestExec;
+        uint64 expiresAt;
+        bytes32 payloadHash;
+        bool used;
