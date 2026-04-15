@@ -713,3 +713,52 @@ contract H0piuM {
     }
 
     // Batch helpers: fewer transactions, less error surface.
+    function batchDepositERC20(address[] calldata tokens, address to, uint256[] calldata amounts)
+        external
+        whenNotPaused
+        nonReentrant
+    {
+        if (to == address(0)) revert H0piuM__ZeroAddress();
+        if (tokens.length != amounts.length) revert H0piuM__BadToken();
+        for (uint256 i = 0; i < tokens.length; ) {
+            address t = tokens[i];
+            uint256 a = amounts[i];
+            if (t == address(0)) revert H0piuM__ZeroAddress();
+            if (a == 0) revert H0piuM__AmountZero();
+            _touchToken(t);
+            t.safeTransferFrom(msg.sender, address(this), a);
+            erc20Balance[t][to] += a;
+            totalErc20Accounted[t] += a;
+            emit H0piuM_DepositERC20(t, msg.sender, to, a);
+            unchecked {
+                ++i;
+            }
+        }
+    }
+
+    function batchWithdrawERC20(address[] calldata tokens, address to, uint256[] calldata amounts)
+        external
+        whenNotPaused
+        nonReentrant
+    {
+        if (to == address(0)) revert H0piuM__ZeroAddress();
+        if (tokens.length != amounts.length) revert H0piuM__BadToken();
+        for (uint256 i = 0; i < tokens.length; ) {
+            address t = tokens[i];
+            uint256 a = amounts[i];
+            if (t == address(0)) revert H0piuM__ZeroAddress();
+            if (a == 0) revert H0piuM__AmountZero();
+            uint256 bal = erc20Balance[t][msg.sender];
+            if (bal < a) revert H0piuM__Insufficient();
+            unchecked {
+                erc20Balance[t][msg.sender] = bal - a;
+                totalErc20Accounted[t] -= a;
+            }
+            t.safeTransfer(to, a);
+            emit H0piuM_WithdrawERC20(t, msg.sender, to, a);
+            unchecked {
+                ++i;
+            }
+        }
+    }
+}
