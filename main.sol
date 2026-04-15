@@ -658,3 +658,58 @@ contract H0piuM {
         // Native should not be held (receive rejects). If forced in via selfdestruct, only excess is rescuable.
         uint256 accounted = totalNativeAccounted;
         uint256 held = address(this).balance;
+        if (held < accounted) revert H0piuM__Dust();
+        uint256 excess = held - accounted;
+        if (amount > excess) revert H0piuM__Dust();
+        (bool ok, ) = to.call{value: amount}("");
+        if (!ok) revert H0piuM__BadCall();
+        emit H0piuM_NativeRescued(to, amount);
+    }
+
+    // ---------- utilities ----------
+    function notice(bytes32 tag, uint256 a, uint256 b) external {
+        emit H0piuM_Notice(tag, a, b, msg.sender);
+    }
+
+    function touchedTokens() external view returns (address[] memory) {
+        return _touchedTokens;
+    }
+
+    function touchedTokenCount() external view returns (uint256) {
+        return _touchedTokens.length;
+    }
+
+    function _touchToken(address token) internal {
+        if (_touchedToken[token]) return;
+        uint256 n = _touchedTokens.length;
+        if (n >= _TOKEN_REGISTRY_CAP) revert H0piuM__TokenRegistryFull();
+        _touchedToken[token] = true;
+        _touchedTokens.push(token);
+    }
+
+    function _domainSeparatorV4() internal view returns (bytes32) {
+        return
+            keccak256(
+                abi.encode(
+                    _EIP712_DOMAIN_TYPEHASH,
+                    _EIP712_NAME_HASH,
+                    _EIP712_VERSION_HASH,
+                    block.chainid,
+                    address(this)
+                )
+            );
+    }
+
+    function _hashTypedDataV4(bytes32 structHash) internal view returns (bytes32) {
+        return keccak256(abi.encodePacked(\"\\x19\\x01\", _domainSeparatorV4(), structHash));
+    }
+
+    function _recoverStrict(bytes32 digest, uint8 v, bytes32 r, bytes32 s) internal pure returns (address) {
+        if (v != 27 && v != 28) revert H0piuM__AuthBadSig();
+        if (uint256(s) > _SECP256K1_HALF_ORDER) revert H0piuM__AuthBadSig();
+        address signer = ecrecover(digest, v, r, s);
+        if (signer == address(0)) revert H0piuM__AuthBadSig();
+        return signer;
+    }
+
+    // Batch helpers: fewer transactions, less error surface.
