@@ -438,3 +438,58 @@ contract H0piuM {
         emit H0piuM_WithdrawERC20(token, msg.sender, to, amount);
     }
 
+    function moveERC20(address token, address to, uint256 amount) external whenNotPaused nonReentrant {
+        if (token == address(0) || to == address(0)) revert H0piuM__ZeroAddress();
+        if (amount == 0) revert H0piuM__AmountZero();
+        uint256 bal = erc20Balance[token][msg.sender];
+        if (bal < amount) revert H0piuM__Insufficient();
+        unchecked {
+            erc20Balance[token][msg.sender] = bal - amount;
+        }
+        erc20Balance[token][to] += amount;
+        emit H0piuM_InternalMoveERC20(token, msg.sender, to, amount);
+    }
+
+    function batchMoveERC20(address token, address[] calldata recipients, uint256[] calldata amounts)
+        external
+        whenNotPaused
+        nonReentrant
+    {
+        if (token == address(0)) revert H0piuM__ZeroAddress();
+        if (recipients.length != amounts.length) revert H0piuM__BadToken();
+        uint256 total;
+        for (uint256 i = 0; i < recipients.length; ) {
+            address to = recipients[i];
+            uint256 a = amounts[i];
+            if (to == address(0)) revert H0piuM__ZeroAddress();
+            if (a == 0) revert H0piuM__AmountZero();
+            unchecked {
+                total += a;
+                ++i;
+            }
+        }
+        uint256 bal = erc20Balance[token][msg.sender];
+        if (bal < total) revert H0piuM__Insufficient();
+        unchecked {
+            erc20Balance[token][msg.sender] = bal - total;
+        }
+        for (uint256 j = 0; j < recipients.length; ) {
+            address to2 = recipients[j];
+            uint256 a2 = amounts[j];
+            erc20Balance[token][to2] += a2;
+            emit H0piuM_InternalMoveERC20(token, msg.sender, to2, a2);
+            unchecked {
+                ++j;
+            }
+        }
+    }
+
+    function authorizedWithdrawNative(
+        address owner_,
+        address payable to,
+        uint256 amount,
+        uint256 deadline,
+        uint8 v,
+        bytes32 r,
+        bytes32 s
+    ) external whenNotPaused nonReentrant returns (uint256 nonce) {
