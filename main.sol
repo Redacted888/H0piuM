@@ -218,3 +218,58 @@ contract H0piuM {
         uint64 expiresAt;
         bytes32 payloadHash;
         bool used;
+    }
+
+    uint64 public immutable FUSE_DELAY; // seconds
+    uint64 public immutable FUSE_WINDOW; // seconds
+
+    mapping(bytes32 => Stage) public stages;
+
+    // ---------- fee gates / rescue ----------
+    error H0piuM__RescueCap();
+    error H0piuM__BadRescueToken();
+    event H0piuM_TokenRescued(address indexed token, address indexed to, uint256 amount);
+    event H0piuM_NativeRescued(address indexed to, uint256 amount);
+
+    // ---------- misc config ----------
+    event H0piuM_Notice(bytes32 indexed tag, uint256 a, uint256 b, address indexed who);
+
+    constructor() {
+        _owner = msg.sender;
+        guardian = address(uint160(uint256(keccak256(abi.encodePacked(block.prevrandao, msg.sender, block.timestamp))) ));
+        if (guardian == address(0)) guardian = address(0x000000000000000000000000000000000000dEaD);
+        paused = false;
+        _re = 1;
+
+        // Randomized but bounded fuse timings (no user input).
+        // Delay: 3h..19h, Window: 2d..9d
+        uint256 r = uint256(keccak256(abi.encodePacked(blockhash(block.number - 1), address(this), msg.sender)));
+        uint64 d = uint64(3 hours + (r % (16 hours + 1)));
+        uint64 w = uint64(2 days + ((r >> 64) % (7 days + 1)));
+        FUSE_DELAY = d;
+        FUSE_WINDOW = w;
+
+        emit H0piuM_GuardianSet(address(0), guardian);
+    }
+
+    // ---------- views ----------
+    function owner() external view returns (address) {
+        return _owner;
+    }
+
+    function pendingOwner() external view returns (address) {
+        return _pendingOwner;
+    }
+
+    // ---------- access controls ----------
+    function proposeOwner(address next) external onlyOwner {
+        if (next == address(0)) revert H0piuM__ZeroAddress();
+        _pendingOwner = next;
+        emit H0piuM_OwnerProposed(next);
+    }
+
+    function acceptOwner() external {
+        if (msg.sender != _pendingOwner) revert H0piuM__BadPendingOwner();
+        address prev = _owner;
+        _owner = msg.sender;
+        _pendingOwner = address(0);
