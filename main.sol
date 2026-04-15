@@ -273,3 +273,58 @@ contract H0piuM {
         address prev = _owner;
         _owner = msg.sender;
         _pendingOwner = address(0);
+        emit H0piuM_OwnerAccepted(prev, msg.sender);
+    }
+
+    function setGuardian(address next) external onlyOwner {
+        if (next == address(0)) revert H0piuM__ZeroAddress();
+        address prev = guardian;
+        guardian = next;
+        emit H0piuM_GuardianSet(prev, next);
+    }
+
+    function pause() external onlyGuardianOrOwner {
+        if (paused) revert H0piuM__AlreadyPaused();
+        paused = true;
+        emit H0piuM_PauseChanged(true, msg.sender);
+    }
+
+    function unpause() external onlyOwner {
+        if (!paused) revert H0piuM__AlreadyUnpaused();
+        paused = false;
+        emit H0piuM_PauseChanged(false, msg.sender);
+    }
+
+    // ---------- user vault actions ----------
+    receive() external payable {
+        // Always reject raw ETH; user must use depositNative for clear accounting.
+        revert H0piuM__NativeRejected();
+    }
+
+    function depositNative(address to) external payable whenNotPaused nonReentrant {
+        if (to == address(0)) revert H0piuM__ZeroAddress();
+        if (msg.value == 0) revert H0piuM__AmountZero();
+        nativeBalance[to] += msg.value;
+        totalNativeAccounted += msg.value;
+        emit H0piuM_DepositNative(msg.sender, to, msg.value);
+    }
+
+    function splitDepositNative(address[] calldata recipients, uint256[] calldata amounts)
+        external
+        payable
+        whenNotPaused
+        nonReentrant
+    {
+        if (recipients.length != amounts.length) revert H0piuM__BadToken();
+        uint256 total;
+        for (uint256 i = 0; i < recipients.length; ) {
+            address to = recipients[i];
+            uint256 a = amounts[i];
+            if (to == address(0)) revert H0piuM__ZeroAddress();
+            if (a == 0) revert H0piuM__AmountZero();
+            nativeBalance[to] += a;
+            emit H0piuM_DepositNative(msg.sender, to, a);
+            unchecked {
+                total += a;
+                ++i;
+            }
