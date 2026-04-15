@@ -603,3 +603,58 @@ contract H0piuM {
             earliestExec: earliest,
             expiresAt: expires,
             payloadHash: h,
+            used: false
+        });
+        emit H0piuM_Staged(id, address(this), earliest, expires);
+    }
+
+    function cancelStage(bytes32 id) external onlyOwner {
+        Stage storage s = stages[id];
+        if (s.earliestExec == 0) revert H0piuM__StageNotFound();
+        delete stages[id];
+        emit H0piuM_StageCancelled(id);
+    }
+
+    function execute(bytes4 selector, bytes calldata payload) external onlyOwner returns (bool ok, bytes memory ret) {
+        bytes memory callData = bytes.concat(selector, payload);
+        bytes32 h = keccak256(callData);
+        bytes32 id = keccak256(abi.encodePacked(address(this), selector, h, block.chainid));
+
+        Stage storage s = stages[id];
+        if (s.earliestExec == 0) revert H0piuM__StageNotFound();
+        if (s.used) revert H0piuM__StageNotFound();
+        if (block.timestamp < s.earliestExec) revert H0piuM__StageNotReady();
+        if (block.timestamp > s.expiresAt) revert H0piuM__StageExpired();
+        if (s.target != address(this)) revert H0piuM__BadStageTarget();
+        if (s.value != 0) revert H0piuM__ValueNotZero();
+        if (s.payloadHash != h) revert H0piuM__StagePayload();
+
+        s.used = true;
+        (ok, ret) = address(this).call(callData);
+        emit H0piuM_StageExecuted(id, s.target, selector, ok);
+    }
+
+    // ---------- admin rescue (NOT staged; intended for “sent by mistake”, tightly capped) ----------
+    function rescueERC20(address token, address to, uint256 amount) external onlyOwner nonReentrant {
+        if (token == address(0) || to == address(0)) revert H0piuM__ZeroAddress();
+        if (amount == 0) revert H0piuM__AmountZero();
+        if (amount > 777_777_777 ether) revert H0piuM__RescueCap();
+
+        // Rescues only excess over accounted totals. This avoids owner draining deposits.
+        uint256 accounted = totalErc20Accounted[token];
+        uint256 held = IERC20Like(token).balanceOf(address(this));
+        if (held < accounted) revert H0piuM__BadRescueToken();
+        uint256 excess = held - accounted;
+        if (amount > excess) revert H0piuM__BadRescueToken();
+        token.safeTransfer(to, amount);
+        emit H0piuM_TokenRescued(token, to, amount);
+    }
+
+    function rescueNative(address payable to, uint256 amount) external onlyOwner nonReentrant {
+        if (to == address(0)) revert H0piuM__ZeroAddress();
+        if (amount == 0) revert H0piuM__AmountZero();
+        if (amount > 333 ether) revert H0piuM__RescueCap();
+
+        // Native should not be held (receive rejects). If forced in via selfdestruct, only excess is rescuable.
+        uint256 accounted = totalNativeAccounted;
+        uint256 held = address(this).balance;
